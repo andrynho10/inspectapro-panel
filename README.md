@@ -100,7 +100,7 @@ Las migraciones SQL completas están en [`supabase/migrations`](supabase/migrati
 - `03` vistas · `04` funciones de análisis (KPIs, tendencias, problemas críticos, horómetros)
 - `05` **RLS**, bucket de fotos y Realtime · `06` datos ficticios y reinicio · `07` tareas programadas (pg_cron)
 - `08` funciones de solo lectura del **asistente con IA** y registro de preguntas
-- `09` **endurecimiento de seguridad** (límites anti-abuso, enmascarado de datos personales) · `10` limpieza nocturna de Storage
+- `09` **endurecimiento de seguridad** (límites anti-abuso, enmascarado de datos personales) · `10` limpieza nocturna de Storage · `11` validación de fechas de inspección
 
 ## 🔒 Seguridad
 
@@ -111,6 +111,7 @@ La seguridad no depende de esconder botones en la interfaz: **se aplica en la ba
 | **Autorización** | Row Level Security en las 15 tablas. Sin sesión no se ve nada. El operador solo crea y modifica sus propias inspecciones. El supervisor administra grúas y plantillas. **Nadie puede borrar.** |
 | **Datos personales** | RUT, ID interno y fecha de ingreso viven en un esquema no expuesto por la API, y solo los ven el propio usuario y los supervisores (vista con enmascarado por fila). |
 | **Anti-abuso** | Máximo 30 inspecciones y 30 preguntas a la IA por usuario y hora, 40 fotos por hora, 5 fotos por ítem y 60 respuestas por reporte. La marca de tiempo la pone el servidor, así que no se puede falsificar para saltarse el límite. |
+| **Fechas confiables** | La fecha de inspección la envía el teléfono (necesario para el modo offline), pero el servidor rechaza fechas en el futuro, de más de 7 días de antigüedad o con inicio posterior al término. |
 | **Archivos** | Bucket con límite de 2 MB y solo imágenes. Solo se sube a la carpeta de un reporte propio, y nadie puede listar, sobrescribir ni borrar archivos. |
 | **Funciones privilegiadas** | Las funciones que requieren privilegios viven en un esquema no expuesto, con `search_path` fijo. Las consultas de la API corren con los permisos del usuario (`SECURITY INVOKER`). |
 | **IA** | La clave solo existe en el servidor, el modelo no puede escribir SQL ni modificar datos, el asistente es exclusivo para supervisores y tiene límite diario. Probado contra intentos de manipulación (*prompt injection*). |
@@ -119,7 +120,7 @@ La seguridad no depende de esconder botones en la interfaz: **se aplica en la ba
 | **Dependencias** | `npm audit`: 0 vulnerabilidades conocidas al momento de publicar. |
 | **Verificación** | Supabase Security Advisor sin hallazgos de RLS, vistas ni funciones. Solo queda "Leaked password protection", una función exclusiva del plan pago. |
 
-Cada medida fue **probada con ataques reales contra la demo**: lecturas sin sesión, edición de datos ajenos, borrado, subida de archivos fuera de carpeta, inserción masiva, fechas falsificadas e instrucciones maliciosas a la IA.
+Cada medida fue **probada con ataques reales contra la demo**: lecturas sin sesión, edición de datos ajenos, borrado, subida de archivos fuera de carpeta, inserción masiva, fechas falsificadas o imposibles e instrucciones maliciosas a la IA.
 
 ## Qué es distinto en esta versión demo
 
