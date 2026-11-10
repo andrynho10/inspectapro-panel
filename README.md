@@ -1,6 +1,6 @@
 # InspectaPro – Demo · Panel web de inspecciones
 
-**Panel web para supervisores** que convierte los checklists diarios de grúas horquilla, antes en papel y planillas Excel, en información en tiempo real: puntajes, fallas recurrentes, horómetros y reportes exportables.
+**Panel web para supervisores, con asistente de IA,** que convierte los checklists diarios de grúas horquilla, antes en papel y planillas Excel, en información en tiempo real: puntajes, fallas recurrentes, horómetros y reportes exportables.
 
 > **Desarrollado como práctica profesional; esta es una versión demo con datos ficticios.**
 > Empresas, personas, RUT, grúas y fotos de esta demo son inventados. La demo se reinicia automáticamente cada noche.
@@ -33,6 +33,26 @@ Un sistema de dos partes conectadas a la misma base de datos:
 1. **App Android para operadores** ([inspectapro-app](https://github.com/andrynho10/inspectapro-app)): escanean el código QR de la grúa, completan el checklist con fotos de las fallas y registran el horómetro. **Funciona sin conexión** y sincroniza sola al recuperar señal.
 2. **Este panel web para supervisores**: ve cada inspección **en el momento en que se envía**, analiza tendencias y exporta reportes en Excel, CSV o PDF.
 
+## ✨ Asistente con IA: "Pregúntale a tus datos"
+
+El supervisor puede preguntar en lenguaje natural y recibir la respuesta con cifras, tablas y enlaces a los reportes:
+
+- *"¿Qué grúa tuvo más fallas de frenos este mes y quién las reportó?"*
+- *"Compara GH-03 con GH-05 en los últimos 30 días."*
+- *"¿Qué grúas no se inspeccionaron ayer?"*
+
+![Asistente con IA](docs/capturas/asistente-ia.png)
+
+**Cómo funciona (y por qué es seguro):**
+
+1. La pregunta llega a una ruta del servidor (`/api/asistente`). La clave de la IA **nunca llega al navegador**.
+2. El modelo (Google **Gemini**, mediante *function calling*) **no escribe SQL**: elige entre 9 consultas de **solo lectura** predefinidas (conteos por grúa/operador/turno/falla, listados, horómetros, estado de grúas…) y sus parámetros.
+3. El servidor ejecuta esas consultas **con la sesión del supervisor**, así que aplican las mismas reglas de seguridad (RLS) que en el resto del panel.
+4. Cada respuesta muestra los **"Datos consultados"**, para que el usuario vea de dónde sale cada número.
+5. En la demo, el asistente tiene un **límite diario de preguntas**, registra cada consulta y rechaza preguntas fuera del tema.
+
+El proveedor de IA es intercambiable: el mismo diseño funciona con otros modelos en la nube o con un modelo abierto en un servidor propio, si los datos no pueden salir de la empresa.
+
 ## Funcionalidades del panel
 
 - **Dashboard en vivo:** inspecciones de hoy, % con problemas, tendencia de 30 días, análisis por turno y feed "EN VIVO" que se actualiza sin recargar la página (Supabase Realtime).
@@ -60,6 +80,7 @@ Un sistema de dos partes conectadas a la misma base de datos:
 | Backend | Supabase: PostgreSQL, Auth, Storage, Realtime |
 | Lógica en BD | 27 funciones SQL (RPC), triggers y vistas |
 | Seguridad | Row Level Security en todas las tablas |
+| IA | Google Gemini (function calling) vía ruta de servidor de Next.js |
 | Hosting | Vercel (panel) · Supabase (base de datos) |
 
 ## Arquitectura y base de datos
@@ -69,7 +90,7 @@ App Android (Kotlin) ──┐                     ┌── Panel web (Next.js,
   offline-first, Room  │                     │     Realtime + RPC
                        ▼                     ▼
               Supabase: PostgreSQL + Auth + Storage + Realtime
-              14 tablas · 3 vistas · 27 funciones RPC · triggers · RLS
+              15 tablas · 3 vistas · 32 funciones RPC · triggers · RLS
 ```
 
 Las migraciones SQL completas están en [`supabase/migrations`](supabase/migrations):
@@ -78,6 +99,7 @@ Las migraciones SQL completas están en [`supabase/migrations`](supabase/migrati
 - `02` triggers: el puntaje y las fallas se calculan **en la base de datos** al guardar las respuestas, junto con el turno y las horas de uso
 - `03` vistas · `04` funciones de análisis (KPIs, tendencias, problemas críticos, horómetros)
 - `05` **RLS**, bucket de fotos y Realtime · `06` datos ficticios y reinicio · `07` tareas programadas (pg_cron)
+- `08` funciones de solo lectura del **asistente con IA** y registro de preguntas
 
 **Seguridad:** sin sesión no se puede leer nada. El operador solo crea y modifica sus propias inspecciones. El supervisor administra grúas y plantillas. El Security Advisor de Supabase no reporta problemas de RLS ni de funciones; la única advertencia, "Leaked password protection", corresponde a una opción exclusiva del plan pago.
 
@@ -97,7 +119,7 @@ Las migraciones SQL completas están en [`supabase/migrations`](supabase/migrati
 git clone https://github.com/andrynho10/inspectapro-panel.git
 cd inspectapro-panel
 npm install
-cp .env.example .env.local   # y completa con los datos de tu proyecto Supabase
+cp .env.example .env.local   # completa Supabase y, si quieres el asistente, GEMINI_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
