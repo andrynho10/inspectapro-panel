@@ -1,6 +1,6 @@
 # InspectaPro – Demo · Panel web de inspecciones
 
-**Panel web para supervisores, con asistente de IA,** que convierte los checklists diarios de grúas horquilla, antes en papel y planillas Excel, en información en tiempo real: puntajes, fallas recurrentes, horómetros y reportes exportables.
+**Panel web para supervisores, con asistente de IA y seguridad aplicada en la base de datos,** que convierte los checklists diarios de grúas horquilla, antes en papel y planillas Excel, en información en tiempo real: puntajes, fallas recurrentes, horómetros y reportes exportables.
 
 > **Desarrollado como práctica profesional; esta es una versión demo con datos ficticios.**
 > Empresas, personas, RUT, grúas y fotos de esta demo son inventados. La demo se reinicia automáticamente cada noche.
@@ -100,8 +100,26 @@ Las migraciones SQL completas están en [`supabase/migrations`](supabase/migrati
 - `03` vistas · `04` funciones de análisis (KPIs, tendencias, problemas críticos, horómetros)
 - `05` **RLS**, bucket de fotos y Realtime · `06` datos ficticios y reinicio · `07` tareas programadas (pg_cron)
 - `08` funciones de solo lectura del **asistente con IA** y registro de preguntas
+- `09` **endurecimiento de seguridad** (límites anti-abuso, enmascarado de datos personales) · `10` limpieza nocturna de Storage
 
-**Seguridad:** sin sesión no se puede leer nada. El operador solo crea y modifica sus propias inspecciones. El supervisor administra grúas y plantillas. El Security Advisor de Supabase no reporta problemas de RLS ni de funciones; la única advertencia, "Leaked password protection", corresponde a una opción exclusiva del plan pago.
+## 🔒 Seguridad
+
+La seguridad no depende de esconder botones en la interfaz: **se aplica en la base de datos y en el servidor**, así que se cumple aunque alguien llame la API directamente con las credenciales públicas de la demo.
+
+| Capa | Medida |
+|---|---|
+| **Autorización** | Row Level Security en las 15 tablas. Sin sesión no se ve nada. El operador solo crea y modifica sus propias inspecciones. El supervisor administra grúas y plantillas. **Nadie puede borrar.** |
+| **Datos personales** | RUT, ID interno y fecha de ingreso viven en un esquema no expuesto por la API, y solo los ven el propio usuario y los supervisores (vista con enmascarado por fila). |
+| **Anti-abuso** | Máximo 30 inspecciones y 30 preguntas a la IA por usuario y hora, 40 fotos por hora, 5 fotos por ítem y 60 respuestas por reporte. La marca de tiempo la pone el servidor, así que no se puede falsificar para saltarse el límite. |
+| **Archivos** | Bucket con límite de 2 MB y solo imágenes. Solo se sube a la carpeta de un reporte propio, y nadie puede listar, sobrescribir ni borrar archivos. |
+| **Funciones privilegiadas** | Las funciones que requieren privilegios viven en un esquema no expuesto, con `search_path` fijo. Las consultas de la API corren con los permisos del usuario (`SECURITY INVOKER`). |
+| **IA** | La clave solo existe en el servidor, el modelo no puede escribir SQL ni modificar datos, el asistente es exclusivo para supervisores y tiene límite diario. Probado contra intentos de manipulación (*prompt injection*). |
+| **Navegador** | Cabeceras CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` y `Permissions-Policy`. Las exportaciones Excel/CSV neutralizan la inyección de fórmulas. |
+| **Secretos** | Ninguna clave privada en el repositorio ni en el navegador. El secreto de la tarea nocturna está en Supabase Vault. |
+| **Dependencias** | `npm audit`: 0 vulnerabilidades conocidas al momento de publicar. |
+| **Verificación** | Supabase Security Advisor sin hallazgos de RLS, vistas ni funciones. Solo queda "Leaked password protection", una función exclusiva del plan pago. |
+
+Cada medida fue **probada con ataques reales contra la demo**: lecturas sin sesión, edición de datos ajenos, borrado, subida de archivos fuera de carpeta, inserción masiva, fechas falsificadas e instrucciones maliciosas a la IA.
 
 ## Qué es distinto en esta versión demo
 
