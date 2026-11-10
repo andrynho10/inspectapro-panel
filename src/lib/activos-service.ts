@@ -68,7 +68,7 @@ export async function obtenerHistorialEstados(activoId: number) {
       .from('historial_estados_activo')
       .select(`
         *,
-        usuarios:usuario_cambio(nombre_completo)
+        usuarios(nombre_completo)
       `)
       .eq('activo_id', activoId)
       .order('fecha_cambio', { ascending: false })

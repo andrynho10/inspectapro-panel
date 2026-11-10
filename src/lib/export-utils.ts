@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx'
 
 /**
  * Genera un nombre de archivo con timestamp
@@ -87,91 +86,89 @@ export function calcularAntiguedad(fechaIngreso: string | Date | null | undefine
   return `${years} ${years === 1 ? 'año' : 'años'} y ${months} ${months === 1 ? 'mes' : 'meses'}`
 }
 
+// Valores que Excel interpretaría como fórmula (=, +, -, @) se neutralizan con un apóstrofo:
+// evita "CSV/Formula injection" si algún dato de usuario empieza con esos caracteres
+function sanear(valor: unknown): string | number | boolean | Date | null {
+  if (valor === null || valor === undefined) return null
+  if (typeof valor === 'number' || typeof valor === 'boolean' || valor instanceof Date) return valor
+  const texto = String(valor)
+  return /^[=+\-@\t\r]/.test(texto) ? `'${texto}` : texto
+}
+
+function descargar(blob: Blob, nombreArchivo: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = nombreArchivo
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+type Hoja = { nombre: string; datos: Array<Record<string, unknown>> }
+
+async function construirLibro(hojas: Hoja[]) {
+  const ExcelJS = (await import('exceljs')).default
+  const libro = new ExcelJS.Workbook()
+  libro.creator = 'InspectaPro'
+  libro.created = new Date()
+  for (const hoja of hojas) {
+    if (!hoja.datos || hoja.datos.length === 0) continue
+    // Excel limita el nombre de hoja a 31 caracteres y prohíbe : \ / ? * [ ]
+    const nombre = hoja.nombre.replace(/[:\\/?*[\]]/g, ' ').slice(0, 31) || 'Datos'
+    const ws = libro.addWorksheet(nombre)
+    const columnas = Object.keys(hoja.datos[0])
+    ws.columns = columnas.map(key => ({
+      header: key,
+      key,
+      width: Math.min(Math.max(key.length, ...hoja.datos.map(r => String(r[key] ?? '').length)) + 2, 50),
+    }))
+    hoja.datos.forEach(fila => ws.addRow(Object.fromEntries(columnas.map(c => [c, sanear(fila[c])]))))
+    ws.getRow(1).font = { bold: true }
+    ws.views = [{ state: 'frozen', ySplit: 1 }]
+  }
+  const buffer = await libro.xlsx.writeBuffer()
+  return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+}
+
 /**
  * Exporta datos a un archivo Excel
  */
-export function exportarAExcel(data: Array<Record<string, unknown>>, nombreArchivo: string, nombreHoja: string = 'Datos') {
+export async function exportarAExcel(data: Array<Record<string, unknown>>, nombreArchivo: string, nombreHoja: string = 'Datos') {
   if (!data || data.length === 0) {
     alert('No hay datos para exportar')
     return
   }
-
-  const worksheet = XLSX.utils.json_to_sheet(data)
-  const workbook = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(workbook, worksheet, nombreHoja)
-
-  // Ajustar ancho de columnas automáticamente
-  const maxWidth = 50
-  const colWidths = Object.keys(data[0]).map(key => {
-    const maxLength = Math.max(
-      key.length,
-      ...data.map(row => String(row[key] || '').length)
-    )
-    return { wch: Math.min(maxLength + 2, maxWidth) }
-  })
-  worksheet['!cols'] = colWidths
-
-  XLSX.writeFile(workbook, nombreArchivo)
+  descargar(await construirLibro([{ nombre: nombreHoja, datos: data }]), nombreArchivo)
 }
 
 /**
- * Exporta datos a un archivo Excel con múltiples hojas; omite hojas vacías para evitar errores de XLSX
+ * Exporta datos a un archivo Excel con múltiples hojas; omite hojas vacías
  */
-export function exportarAExcelMultiplesHojas(
-  hojas: Array<{ nombre: string; datos: Array<Record<string, unknown>> }>,
-  nombreArchivo: string
-) {
-  if (!hojas || hojas.length === 0) {
+export async function exportarAExcelMultiplesHojas(hojas: Hoja[], nombreArchivo: string) {
+  if (!hojas || hojas.length === 0 || hojas.every(h => !h.datos || h.datos.length === 0)) {
     alert('No hay datos para exportar')
     return
   }
-
-  const workbook = XLSX.utils.book_new()
-
-  hojas.forEach(hoja => {
-    if (hoja.datos && hoja.datos.length > 0) {
-      const worksheet = XLSX.utils.json_to_sheet(hoja.datos)
-
-      // Ajustar ancho de columnas automáticamente
-      const maxWidth = 50
-      const colWidths = Object.keys(hoja.datos[0]).map(key => {
-        const maxLength = Math.max(
-          key.length,
-          ...hoja.datos.map(row => String(row[key] || '').length)
-        )
-        return { wch: Math.min(maxLength + 2, maxWidth) }
-      })
-      worksheet['!cols'] = colWidths
-
-      XLSX.utils.book_append_sheet(workbook, worksheet, hoja.nombre)
-    }
-  })
-
-  XLSX.writeFile(workbook, nombreArchivo)
+  descargar(await construirLibro(hojas), nombreArchivo)
 }
 
 /**
- * Exporta datos a CSV usando XLSX como intermediario para garantizar encoding correcto;
- * dispara descarga mediante un <a> temporal en el DOM
+ * Exporta datos a CSV (UTF-8 con BOM para que Excel respete tildes y ñ)
  */
 export function exportarACSV(data: Array<Record<string, unknown>>, nombreArchivo: string) {
   if (!data || data.length === 0) {
     alert('No hay datos para exportar')
     return
   }
-
-  const worksheet = XLSX.utils.json_to_sheet(data)
-  const csv = XLSX.utils.sheet_to_csv(worksheet)
-
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
-
-  link.setAttribute('href', url)
-  link.setAttribute('download', nombreArchivo)
-  link.style.visibility = 'hidden'
-
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  const columnas = Object.keys(data[0])
+  const celda = (v: unknown) => {
+    const t = sanear(v)
+    const s = t === null ? '' : t instanceof Date ? t.toISOString() : String(t)
+    return /[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lineas = [columnas.map(celda).join(','), ...data.map(f => columnas.map(c => celda(f[c])).join(','))]
+  descargar(new Blob(['\ufeff' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8;' }), nombreArchivo)
 }
